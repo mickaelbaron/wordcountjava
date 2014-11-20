@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class WordCounterMultiThread {
 
-    private TreeMap<String, Integer> frequencyData = new TreeMap<String, Integer>();
+    private Map<String, Integer> frequencyData = new TreeMap<String, Integer>();
 
     private long[] offsets;
 
@@ -32,6 +33,8 @@ public class WordCounterMultiThread {
 
     private int chunksNumber;
 
+    private long start;
+    
     public static void main(String[] args) throws NumberFormatException,
 	    IOException {
 	if (args == null) {
@@ -41,12 +44,7 @@ public class WordCounterMultiThread {
 	}
 
 	if (args.length == 3) {
-	    long start = System.currentTimeMillis();
-	    WordCounterMultiThread current = new WordCounterMultiThread(
-		    args[0], args[1], Integer.parseInt(args[2]));
-	    System.out.println("Max Processors: " + current.maxThreads);
-	    System.out.println("Duration(" + current.fileProcessors.size()
-		    + "): " + (System.currentTimeMillis() - start) + " ms");
+	    new WordCounterMultiThread(args[0], args[1], Integer.parseInt(args[2]));
 	} else {
 	    System.out
 		    .println("Arguments are missing. First argument must specify the source file, the second must specify the output file and the third the thread number.");
@@ -57,13 +55,14 @@ public class WordCounterMultiThread {
 
     public WordCounterMultiThread(String source, String destination,
 	    int pChunksNumber) throws IOException {
-	maxThreads = Runtime.getRuntime().availableProcessors();
-	fileProcessors = new ArrayList<FileProcessor>();
-	sourceFile = new File(source);
+	this.start = System.currentTimeMillis();
+	this.maxThreads = Runtime.getRuntime().availableProcessors();
+	this.fileProcessors = new ArrayList<FileProcessor>();
+	this.sourceFile = new File(source);
 	this.chunksNumber = pChunksNumber;
 
 	// 1-Determine the offsets.
-	offsets = this.split();
+	this.offsets = this.split();
 	// 2-Execute threads.
 	this.map();
 	// 3-Reduce the Map.
@@ -73,15 +72,15 @@ public class WordCounterMultiThread {
     }
 
     private long[] split() throws IOException {
-	long[] offsets = new long[chunksNumber];
+	long[] offsets = new long[this.chunksNumber];
 
-	RandomAccessFile raf = new RandomAccessFile(sourceFile, "r");
+	RandomAccessFile raf = new RandomAccessFile(this.sourceFile, "r");
 
-	if (chunksNumber == 1) {
+	if (this.chunksNumber == 1) {
 	    offsets[0] = 0;
 	} else {
-	    for (int i = 1; i < chunksNumber; i++) {
-		raf.seek(i * sourceFile.length() / chunksNumber);
+	    for (int i = 1; i < this.chunksNumber; i++) {
+		raf.seek(i * this.sourceFile.length() / this.chunksNumber);
 
 		while (true) {
 		    int read = raf.read();
@@ -103,6 +102,8 @@ public class WordCounterMultiThread {
 	BufferedWriter writter = null;
 	try {
 	    writter = new BufferedWriter(new FileWriter(destination));
+	    writter.write("Max Processors: " + this.maxThreads + "\n");
+	    writter.write("Duration(" + this.fileProcessors.size() + "): " + (System.currentTimeMillis() - start) + " ms\n");
 	    writter.write("    Occurrences    Word\n");
 	    writter.write("-----------------------------------------------\n");
 
@@ -125,14 +126,14 @@ public class WordCounterMultiThread {
 	// Process each chunk using a thread for each one
 	ExecutorService service = Executors.newFixedThreadPool(maxThreads + 1);
 
-	service.execute(new ConsoleProcessor(fileProcessors));
-	for (int i = 0; i < chunksNumber; i++) {
+	service.execute(new ConsoleProcessor(this.fileProcessors));
+	for (int i = 0; i < this.chunksNumber; i++) {
 	    long startOffsets = offsets[i];
-	    long end = i < chunksNumber - 1 ? offsets[i + 1] : sourceFile
+	    long end = i < this.chunksNumber - 1 ? this.offsets[i + 1] : this.sourceFile
 		    .length();
 	    final FileProcessor newFileProcessor = new FileProcessor(i,
-		    sourceFile, startOffsets, end);
-	    fileProcessors.add(newFileProcessor);
+		    this.sourceFile, startOffsets, end);
+	    this.fileProcessors.add(newFileProcessor);
 	    service.execute(newFileProcessor);
 	}
 
@@ -146,13 +147,13 @@ public class WordCounterMultiThread {
     }
 
     public void reduce() {
-	for (FileProcessor current : fileProcessors) {
+	for (FileProcessor current : this.fileProcessors) {
 	    for (String key : current.getFrequencyData().keySet()) {
-		if (frequencyData.containsKey(key)) {
-		    frequencyData.put(key, frequencyData.get(key)
+		if (this.frequencyData.containsKey(key)) {
+		    this.frequencyData.put(key, this.frequencyData.get(key)
 			    + current.getFrequencyData().get(key));
 		} else {
-		    frequencyData.put(key, current.getFrequencyData().get(key));
+		    this.frequencyData.put(key, current.getFrequencyData().get(key));
 		}
 	    }
 	}
@@ -170,7 +171,7 @@ public class WordCounterMultiThread {
 	    boolean fullComplete = false;
 	    int failureTest = 0;
 	    while (!fullComplete && failureTest != 10) {
-		if (fileProcessors.isEmpty()) {
+		if (this.fileProcessors.isEmpty()) {
 		    try {
 			System.out
 				.println("Waiting for FileProcessor thread process.");
@@ -182,7 +183,7 @@ public class WordCounterMultiThread {
 		} else {
 		    fullComplete = true;
 		    String result = "";
-		    for (FileProcessor fileProcessor : fileProcessors) {
+		    for (FileProcessor fileProcessor : this.fileProcessors) {
 			final int percentage = fileProcessor.getPercentage();
 			result += printProgBar(fileProcessor.getIndice(),
 				fileProcessor.percentage);
@@ -231,7 +232,7 @@ public class WordCounterMultiThread {
 
 	private final long end;
 
-	private TreeMap<String, Integer> frequencyData = new TreeMap<String, Integer>();
+	private Map<String, Integer> frequencyData = new TreeMap<String, Integer>();
 
 	private int percentage;
 
@@ -244,7 +245,7 @@ public class WordCounterMultiThread {
 	    this.indice = pIndice;
 	}
 
-	public int getCount(String word, TreeMap<String, Integer> frequencyData) {
+	public int getCount(String word, Map<String, Integer> frequencyData) {
 	    if (frequencyData.containsKey(word)) {
 		return frequencyData.get(word);
 	    } else {
@@ -268,11 +269,11 @@ public class WordCounterMultiThread {
 		    StringTokenizer tokenizer = new StringTokenizer(line);
 		    while (tokenizer.hasMoreTokens()) {
 			word = tokenizer.nextToken();
-			count = getCount(word, frequencyData) + 1;
-			frequencyData.put(word, count);
+			count = getCount(word, this.frequencyData) + 1;
+			this.frequencyData.put(word, count);
 		    }
 
-		    percentage = Math
+		    this.percentage = Math
 			    .round(((raf.getFilePointer() - start) * 100)
 				    / (end - start));
 		}
@@ -282,12 +283,12 @@ public class WordCounterMultiThread {
 	    }
 	}
 
-	public TreeMap<String, Integer> getFrequencyData() {
-	    return frequencyData;
+	public Map<String, Integer> getFrequencyData() {
+	    return this.frequencyData;
 	}
 
 	public int getPercentage() {
-	    return percentage;
+	    return this.percentage;
 	}
 
 	public int getIndice() {
