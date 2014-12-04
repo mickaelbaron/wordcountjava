@@ -35,26 +35,41 @@ public class WordCounterMultiThread {
 
     private long start;
     
+    private long finishSplit;
+    
+    private long finishMap;
+    
+    private long finishReduce;
+    
+    private long finishPrintAllCounts;
+    
     public static void main(String[] args) throws NumberFormatException,
 	    IOException {
 	if (args == null) {
-	    System.out.println("Arguments are missing.");
+	    WordCounterMultiThread.displayArgumentsAreMissing();
 
 	    return;
 	}
 
-	if (args.length == 3) {
-	    new WordCounterMultiThread(args[0], args[1], Integer.parseInt(args[2]));
+	if (args.length == 4) {
+	    new WordCounterMultiThread(args[0], args[1], args[2], Integer.parseInt(args[3]));
 	} else {
-	    System.out
-		    .println("Arguments are missing. First argument must specify the source file, the second must specify the output file and the third the thread number.");
-
+	    WordCounterMultiThread.displayArgumentsAreMissing();
+	    
 	    return;
 	}
     }
+    
+    public static void displayArgumentsAreMissing() {
+	System.out.println("Arguments are missing.");
+	System.out.println("  - The first argument must specify the source file.");
+	System.out.println("  - The second must specify the output file.");
+	System.out.println("  - The third must specify the report file.");
+	System.out.println("  - The fourth the thread number.");
+    }
 
     public WordCounterMultiThread(String source, String destination,
-	    int pChunksNumber) throws IOException {
+	    String report, int pChunksNumber) throws IOException {
 	this.start = System.currentTimeMillis();
 	this.maxThreads = Runtime.getRuntime().availableProcessors();
 	this.fileProcessors = new ArrayList<FileProcessor>();
@@ -69,6 +84,8 @@ public class WordCounterMultiThread {
 	this.reduce();
 	// 4-Write the output.
 	this.printAllCounts(destination);
+	// 5-Print the report.
+	this.printReport(report);	
     }
 
     private long[] split() throws IOException {
@@ -94,16 +111,32 @@ public class WordCounterMultiThread {
 	}
 
 	raf.close();
+	
+	finishSplit = System.currentTimeMillis();
 
 	return offsets;
     }
 
+    public void printReport(String report) {
+	BufferedWriter writter = null;
+	try {
+	    writter = new BufferedWriter(new FileWriter(report));
+	    writter.write("Core_Nb   Max_Thread   Total_Duration   Split_Step   Map_Step   Reduce_Step   Print_Step\n");
+	    writter.write(this.maxThreads + "  " + this.chunksNumber + "   " + (System.currentTimeMillis() - start) + "   " + (finishSplit - start) + "   " + (finishMap - start) + "   " + (finishReduce - start) + "   " + (finishPrintAllCounts - start));
+	} catch (IOException e) {
+	    e.printStackTrace();
+	} finally {
+	    try {
+		writter.close();
+	    } catch (IOException e) {
+	    }
+	}
+    }
+    
     public void printAllCounts(String destination) {
 	BufferedWriter writter = null;
 	try {
 	    writter = new BufferedWriter(new FileWriter(destination));
-	    writter.write("Max Processors: " + this.maxThreads + "\n");
-	    writter.write("Duration(" + this.fileProcessors.size() + "): " + (System.currentTimeMillis() - start) + " ms\n");
 	    writter.write("    Occurrences    Word\n");
 	    writter.write("-----------------------------------------------\n");
 
@@ -120,11 +153,13 @@ public class WordCounterMultiThread {
 	    } catch (IOException e) {
 	    }
 	}
+	
+	finishPrintAllCounts = System.currentTimeMillis(); 
     }
 
     public void map() {
 	// Process each chunk using a thread for each one
-	ExecutorService service = Executors.newFixedThreadPool(maxThreads + 1);
+	ExecutorService service = Executors.newFixedThreadPool(chunksNumber + 1);
 
 	service.execute(new ConsoleProcessor(this.fileProcessors));
 	for (int i = 0; i < this.chunksNumber; i++) {
@@ -144,6 +179,8 @@ public class WordCounterMultiThread {
 	} catch (InterruptedException e) {
 	    e.printStackTrace();
 	}
+	
+	finishMap = System.currentTimeMillis();
     }
 
     public void reduce() {
@@ -157,6 +194,8 @@ public class WordCounterMultiThread {
 		}
 	    }
 	}
+	
+	finishReduce = System.currentTimeMillis();
     }
 
     class ConsoleProcessor implements Runnable {
